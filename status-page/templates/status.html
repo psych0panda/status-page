@@ -1,0 +1,264 @@
+<script>
+    // URL schemes
+    const URL_SCHEMES = [
+        'https://',
+        'http://',
+        'ws://',
+        'wss://',
+        'postgresql://',
+        'mysql://',
+        'mongodb://',
+        'redis://'
+    ];
+
+    // Common ports
+    const COMMON_PORTS = [
+        { value: '', label: 'Custom' },
+        { value: '80', label: '80 (HTTP)' },
+        { value: '443', label: '443 (HTTPS)' },
+        { value: '5432', label: '5432 (PostgreSQL)' },
+        { value: '3306', label: '3306 (MySQL)' },
+        { value: '27017', label: '27017 (MongoDB)' },
+        { value: '6379', label: '6379 (Redis)' },
+        { value: '8080', label: '8080 (HTTP Alt)' },
+        { value: '8443', label: '8443 (HTTPS Alt)' }
+    ];
+
+    // Common endpoints
+    const COMMON_ENDPOINTS = [
+        { value: '', label: 'Custom' },
+        { value: '/health', label: '/health' },
+        { value: '/status', label: '/status' },
+        { value: '/metrics', label: '/metrics' },
+        { value: '/api/health', label: '/api/health' },
+        { value: '/api/status', label: '/api/status' }
+    ];
+
+    function parseUrl(url) {
+        try {
+            // Try to parse as URL first
+            const urlObj = new URL(url);
+            return {
+                scheme: urlObj.protocol,
+                host: urlObj.hostname,
+                port: urlObj.port,
+                path: urlObj.pathname,
+                username: urlObj.username,
+                password: urlObj.password,
+                isConnectionString: false
+            };
+        } catch {
+            // If not a valid URL, try to parse as connection string
+            const connectionStringMatch = url.match(/^([^:]+):\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)$/);
+            if (connectionStringMatch) {
+                return {
+                    scheme: connectionStringMatch[1] + '://',
+                    username: connectionStringMatch[2],
+                    password: connectionStringMatch[3],
+                    host: connectionStringMatch[4],
+                    port: connectionStringMatch[5],
+                    database: connectionStringMatch[6],
+                    isConnectionString: true
+                };
+            }
+            return {
+                scheme: 'https://',
+                host: '',
+                port: '',
+                path: '',
+                username: '',
+                password: '',
+                database: '',
+                isConnectionString: false
+            };
+        }
+    }
+
+    function createServiceField(index, name = '', url = '') {
+        const urlParts = parseUrl(url);
+
+        return `
+            <div class="service-field border-b pb-4 mb-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h4 class="text-sm font-medium text-gray-700">Service ${index}</h4>
+                    ${index > 2 ? `
+                        <button type="button" onclick="removeServiceField(this)" class="text-red-600 hover:text-red-800">
+                            Remove
+                        </button>
+                    ` : ''}
+                </div>
+                <div class="space-y-2">
+                    <input type="text" 
+                           name="service${index}_name" 
+                           placeholder="Service Name" 
+                           value="${name}"
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                    
+                    <div class="flex space-x-2">
+                        <select name="service${index}_scheme" 
+                                onchange="handleSchemeChange(this)"
+                                class="mt-1 block w-32 rounded-l-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            ${URL_SCHEMES.map(s => `
+                                <option value="${s}" ${s === urlParts.scheme ? 'selected' : ''}>${s}</option>
+                            `).join('')}
+                        </select>
+
+                        ${urlParts.isConnectionString ? `
+                            <input type="text" 
+                                   name="service${index}_username" 
+                                   placeholder="Username" 
+                                   value="${urlParts.username}"
+                                   onchange="updateFullUrl(this)"
+                                   class="mt-1 block w-32 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            <input type="password" 
+                                   name="service${index}_password" 
+                                   placeholder="Password" 
+                                   value="${urlParts.password}"
+                                   onchange="updateFullUrl(this)"
+                                   class="mt-1 block w-32 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        ` : ''}
+
+                        <input type="text" 
+                               name="service${index}_host" 
+                               placeholder="Host" 
+                               value="${urlParts.host}"
+                               onchange="updateFullUrl(this)"
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+
+                        <div class="relative">
+                            <select name="service${index}_port_select" 
+                                    onchange="handlePortSelect(this)"
+                                    class="mt-1 block w-32 rounded-r-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                ${COMMON_PORTS.map(p => `
+                                    <option value="${p.value}" ${p.value === urlParts.port ? 'selected' : ''}>${p.label}</option>
+                                `).join('')}
+                            </select>
+                            <input type="text" 
+                                   name="service${index}_port" 
+                                   placeholder="Port" 
+                                   value="${urlParts.port}"
+                                   onchange="validatePort(this)"
+                                   class="mt-1 block w-32 rounded-r-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm hidden">
+                        </div>
+                    </div>
+
+                    ${!urlParts.isConnectionString ? `
+                        <div class="flex space-x-2">
+                            <select name="service${index}_endpoint_select" 
+                                    onchange="handleEndpointSelect(this)"
+                                    class="mt-1 block w-32 rounded-l-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                ${COMMON_ENDPOINTS.map(e => `
+                                    <option value="${e.value}" ${e.value === urlParts.path ? 'selected' : ''}>${e.label}</option>
+                                `).join('')}
+                            </select>
+                            <input type="text" 
+                                   name="service${index}_endpoint" 
+                                   placeholder="Custom endpoint" 
+                                   value="${urlParts.path}"
+                                   onchange="updateFullUrl(this)"
+                                   class="mt-1 block w-full rounded-r-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        </div>
+                    ` : `
+                        <input type="text" 
+                               name="service${index}_database" 
+                               placeholder="Database" 
+                               value="${urlParts.database}"
+                               onchange="updateFullUrl(this)"
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                    `}
+
+                    <input type="hidden" name="service${index}_full_url" value="${url}">
+                </div>
+            </div>
+        `;
+    }
+
+    function handleSchemeChange(select) {
+        const field = select.closest('.service-field');
+        const isConnectionString = select.value.includes('postgresql://') ||
+            select.value.includes('mysql://') ||
+            select.value.includes('mongodb://') ||
+            select.value.includes('redis://');
+
+        // Show/hide connection string fields
+        const usernameField = field.querySelector('input[name$="_username"]');
+        const passwordField = field.querySelector('input[name$="_password"]');
+        const databaseField = field.querySelector('input[name$="_database"]');
+        const endpointField = field.querySelector('input[name$="_endpoint"]');
+        const endpointSelect = field.querySelector('select[name$="_endpoint_select"]');
+
+        if (isConnectionString) {
+            if (!usernameField) {
+                // Add connection string fields if they don't exist
+                const hostInput = field.querySelector('input[name$="_host"]');
+                const portInput = field.querySelector('input[name$="_port"]');
+
+                const newFields = document.createElement('div');
+                newFields.innerHTML = `
+                    <input type="text" 
+                           name="${hostInput.name.replace('_host', '_username')}" 
+                           placeholder="Username" 
+                           class="mt-1 block w-32 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                    <input type="password" 
+                           name="${hostInput.name.replace('_host', '_password')}" 
+                           placeholder="Password" 
+                           class="mt-1 block w-32 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                `;
+                hostInput.parentNode.insertBefore(newFields.firstElementChild, hostInput);
+                hostInput.parentNode.insertBefore(newFields.lastElementChild, hostInput);
+            }
+            if (endpointField) endpointField.parentNode.remove();
+            if (endpointSelect) endpointSelect.parentNode.remove();
+        } else {
+            if (usernameField) usernameField.parentNode.remove();
+            if (passwordField) passwordField.parentNode.remove();
+            if (databaseField) databaseField.parentNode.remove();
+        }
+
+        updateFullUrl(select);
+    }
+
+    function handleEndpointSelect(select) {
+        const endpointInput = select.nextElementSibling;
+        if (select.value === '') {
+            endpointInput.focus();
+        } else {
+            endpointInput.value = select.value;
+            updateFullUrl(endpointInput);
+        }
+    }
+
+    function updateFullUrl(input) {
+        const field = input.closest('.service-field');
+        const scheme = field.querySelector('select[name$="_scheme"]').value;
+        const isConnectionString = scheme.includes('postgresql://') ||
+            scheme.includes('mysql://') ||
+            scheme.includes('mongodb://') ||
+            scheme.includes('redis://');
+
+        let fullUrl = scheme;
+
+        if (isConnectionString) {
+            const username = field.querySelector('input[name$="_username"]').value;
+            const password = field.querySelector('input[name$="_password"]').value;
+            const host = field.querySelector('input[name$="_host"]').value;
+            const port = field.querySelector('input[name$="_port"]').value;
+            const database = field.querySelector('input[name$="_database"]').value;
+
+            fullUrl += `${username}:${password}@${host}:${port}/${database}`;
+        } else {
+            const host = field.querySelector('input[name$="_host"]').value;
+            const port = field.querySelector('input[name$="_port"]').value;
+            const endpoint = field.querySelector('input[name$="_endpoint"]').value;
+
+            fullUrl += host;
+            if (port) fullUrl += `:${port}`;
+            if (endpoint) fullUrl += endpoint;
+        }
+
+        field.querySelector('input[name$="_full_url"]').value = fullUrl;
+        saveFormState();
+    }
+
+    // ... остальные функции остаются без изменений ...
+</script>
