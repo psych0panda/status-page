@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UpTimeLens</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}">
+</head>
+
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <header class="mb-8">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-800">UpTimeLens</h1>
+                    <p class="text-gray-600">Real-time system status and health checks</p>
+                </div>
+                <button onclick="openModal()"
+                    class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Configure Services
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            {% for component_id, component in components.items() %}
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-semibold text-gray-800">{{ component.name or 'Unnamed Service' }}</h2>
+                    <span class="status-indicator {{ statuses[component_id].status }}"></span>
+                </div>
+                <p class="text-sm text-gray-600 mb-2">URL: {{ component.url or 'Not configured' }}</p>
+                <p class="text-sm text-gray-600">Last checked: {{ statuses[component_id].last_checked }}</p>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Recent Status Changes</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full">
+                    <thead>
+                        <tr class="bg-gray-50">
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Component</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Status</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for entry in history %}
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{
+                                components[entry.component].name or 'Unnamed Service' }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span
+                                    class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full {{ 'bg-green-100 text-green-800' if entry.status == 'operational' else 'bg-red-100 text-red-800' }}">
+                                    {{ entry.status }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ entry.timestamp }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="configModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <h3 class="text-lg font-medium leading-6 text-gray-900 mb-4">Configure Services</h3>
+                <form id="configForm" method="POST" action="/configure" class="space-y-4">
+                    <input type="hidden" name="service_count" id="serviceCount" value="2">
+                    <div id="servicesContainer">
+                        <!-- Service fields will be added here -->
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <button type="button" onclick="addServiceField()"
+                            class="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            Add Service
+                        </button>
+                        <div class="space-x-3">
+                            <button type="button" onclick="closeModal()"
+                                class="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                Cancel
+                            </button>
+                            <button type="submit"
+                                class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // URL schemes
+        const URL_SCHEMES = ['https://', 'http://', 'ws://', 'wss://'];
+
+        // Common ports
+        const COMMON_PORTS = [
+            { value: '', label: 'Custom' },
+            { value: '80', label: '80 (HTTP)' },
+            { value: '443', label: '443 (HTTPS)' },
+            { value: '8080', label: '8080 (HTTP Alt)' },
+            { value: '8443', label: '8443 (HTTPS Alt)' },
+            { value: '3000', label: '3000 (Node.js)' },
+            { value: '5000', label: '5000 (Flask)' },
+            { value: '8000', label: '8000 (Django)' },
+            { value: '8181', label: '8181 (Custom)' }
+        ];
+
+        // Modal functions
+        function openModal() {
+            document.getElementById('configModal').classList.remove('hidden');
+            initializeServiceFields();
+        }
+
+        function closeModal() {
+            document.getElementById('configModal').classList.add('hidden');
+            localStorage.setItem('modalOpen', 'false');
+        }
+
+        // Service field management
+        function createServiceField(index, name = '', url = '') {
+            // Parse URL into components
+            let [scheme = 'https://', rest = ''] = url.split('://');
+            if (rest) {
+                scheme += '://';
+            }
+
+            // Split host and port
+            let [host = '', port = ''] = rest.split(':');
+
+            return `
+                <div class="service-field border-b pb-4 mb-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <h4 class="text-sm font-medium text-gray-700">Service ${index}</h4>
+                        ${index > 2 ? `
+                            <button type="button" onclick="removeServiceField(this)" class="text-red-600 hover:text-red-800">
+                                Remove
+                            </button>
+                        ` : ''}
+                    </div>
+                    <div class="space-y-2">
+                        <input type="text" 
+                               name="service${index}_name" 
+                               placeholder="Service Name" 
+                               value="${name}"
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        <div class="flex space-x-2">
+                            <select name="service${index}_scheme" 
+                                    onchange="updateUrlField(this)"
+                                    class="mt-1 block w-32 rounded-l-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                ${URL_SCHEMES.map(s => `
+                                    <option value="${s}" ${s === scheme ? 'selected' : ''}>${s}</option>
+                                `).join('')}
+                            </select>
+                            <input type="text" 
+                                   name="service${index}_host" 
+                                   placeholder="example.com" 
+                                   value="${host}"
+                                   onchange="updateFullUrl(this)"
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            <div class="relative">
+                                <select name="service${index}_port_select" 
+                                        onchange="handlePortSelect(this)"
+                                        class="mt-1 block w-32 rounded-r-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                    ${COMMON_PORTS.map(p => `
+                                        <option value="${p.value}" ${p.value === port ? 'selected' : ''}>${p.label}</option>
+                                    `).join('')}
+                                </select>
+                                <input type="text" 
+                                       name="service${index}_port" 
+                                       placeholder="Port" 
+                                       value="${port}"
+                                       onchange="validatePort(this)"
+                                       class="mt-1 block w-32 rounded-r-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm hidden">
+                            </div>
+                        </div>
+                        <input type="hidden" name="service${index}_full_url" value="${url}">
+                    </div>
+                </div>
+            `;
+        }
+
+        function handlePortSelect(select) {
+            const portInput = select.nextElementSibling;
+            if (select.value === '') {
+                // Show custom port input
+                select.classList.add('hidden');
+                portInput.classList.remove('hidden');
+                portInput.focus();
+            } else {
+                // Use selected port
+                portInput.value = select.value;
+                updateFullUrl(select.closest('.service-field').querySelector('input[name$="_host"]'));
+            }
+        }
+
+        function validatePort(input) {
+            const port = parseInt(input.value);
+            if (isNaN(port) || port < 0 || port > 65535) {
+                input.classList.add('border-red-500');
+                input.setCustomValidity('Port must be a number between 0 and 65535');
+            } else {
+                input.classList.remove('border-red-500');
+                input.setCustomValidity('');
+                updateFullUrl(input.closest('.service-field').querySelector('input[name$="_host"]'));
+            }
+        }
+
+        function updateUrlField(select) {
+            const field = select.closest('.service-field');
+            const hostInput = field.querySelector('input[name$="_host"]');
+            const portInput = field.querySelector('input[name$="_port"]');
+            const fullUrlInput = field.querySelector('input[name$="_full_url"]');
+
+            const host = hostInput.value;
+            const port = portInput.value;
+            const portPart = port ? `:${port}` : '';
+
+            fullUrlInput.value = select.value + host + portPart;
+            saveFormState();
+        }
+
+        function updateFullUrl(input) {
+            const field = input.closest('.service-field');
+            const select = field.querySelector('select[name$="_scheme"]');
+            const portInput = field.querySelector('input[name$="_port"]');
+            const fullUrlInput = field.querySelector('input[name$="_full_url"]');
+
+            const host = input.value;
+            const port = portInput.value;
+            const portPart = port ? `:${port}` : '';
+
+            fullUrlInput.value = select.value + host + portPart;
+            saveFormState();
+        }
+
+        function initializeServiceFields() {
+            const container = document.getElementById('servicesContainer');
+            container.innerHTML = '';
+
+            let savedServices = JSON.parse(localStorage.getItem('services') || '[]');
+            const serviceCount = savedServices.length || 2;
+            document.getElementById('serviceCount').value = serviceCount;
+
+            if (savedServices.length === 0) {
+                for (let i = 1; i <= serviceCount; i++) {
+                    container.innerHTML += createServiceField(i);
+                }
+            } else {
+                savedServices.forEach((service, index) => {
+                    container.innerHTML += createServiceField(index + 1, service.name, service.url);
+                });
+            }
+
+            // Добавляем обработчики событий для всех полей после инициализации
+            const urlInputs = container.querySelectorAll('input[name$="_url"]');
+            const schemeSelects = container.querySelectorAll('select[name$="_scheme"]');
+
+            urlInputs.forEach(input => {
+                input.addEventListener('change', () => updateFullUrl(input));
+            });
+
+            schemeSelects.forEach(select => {
+                select.addEventListener('change', () => updateUrlField(select));
+            });
+        }
+
+        function addServiceField() {
+            const container = document.getElementById('servicesContainer');
+            const serviceCount = parseInt(document.getElementById('serviceCount').value) + 1;
+            document.getElementById('serviceCount').value = serviceCount;
+
+            // Создаем новый элемент
+            const newField = document.createElement('div');
+            newField.innerHTML = createServiceField(serviceCount);
+
+            // Добавляем новый элемент в контейнер
+            container.appendChild(newField.firstElementChild);
+
+            saveFormState();
+        }
+
+        function removeServiceField(button) {
+            const field = button.closest('.service-field');
+            field.remove();
+            const serviceCount = parseInt(document.getElementById('serviceCount').value) - 1;
+            document.getElementById('serviceCount').value = serviceCount;
+            saveFormState();
+        }
+
+        // Save form state to localStorage
+        function saveFormState() {
+            const services = [];
+            const serviceFields = document.querySelectorAll('.service-field');
+
+            serviceFields.forEach((field, index) => {
+                const serviceNumber = index + 1;
+                const nameInput = field.querySelector(`input[name="service${serviceNumber}_name"]`);
+                const fullUrlInput = field.querySelector(`input[name="service${serviceNumber}_full_url"]`);
+
+                services.push({
+                    name: nameInput ? nameInput.value : '',
+                    url: fullUrlInput ? fullUrlInput.value : ''
+                });
+            });
+
+            localStorage.setItem('services', JSON.stringify(services));
+        }
+
+        // Load saved state on page load
+        document.addEventListener('DOMContentLoaded', function () {
+            const wasModalOpen = localStorage.getItem('modalOpen') === 'true';
+            if (wasModalOpen) {
+                openModal();
+            }
+
+            const form = document.getElementById('configForm');
+
+            // Добавляем обработчик для всех полей ввода
+            form.addEventListener('input', function (e) {
+                if (e.target.matches('input[name$="_name"], input[name$="_url"], select[name$="_scheme"]')) {
+                    saveFormState();
+                }
+            });
+        });
+
+        // Save modal state before page refresh
+        window.addEventListener('beforeunload', function () {
+            const isModalOpen = !document.getElementById('configModal').classList.contains('hidden');
+            localStorage.setItem('modalOpen', isModalOpen.toString());
+        });
+
+        // Auto-refresh the page every 30 seconds
+        let refreshTimeout = setTimeout(() => {
+            window.location.reload();
+        }, 30000);
+
+        // Clear refresh timeout when modal is open
+        document.getElementById('configModal').addEventListener('mouseenter', function () {
+            clearTimeout(refreshTimeout);
+        });
+
+        // Restart refresh timeout when modal is closed
+        document.getElementById('configModal').addEventListener('mouseleave', function () {
+            refreshTimeout = setTimeout(() => {
+                window.location.reload();
+            }, 30000);
+        });
+    </script>
+</body>
+
+</html>

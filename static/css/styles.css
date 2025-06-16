@@ -1,0 +1,40 @@
+.status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.status-indicator.operational {
+    background-color: #10B981;
+}
+
+.status-indicator.degraded {
+    background-color: #EF4444;
+}
+
+.status-indicator.unknown {
+    background-color: #9CA3AF;
+}
+
+/* Animation for status changes */
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+
+    50% {
+        transform: scale(1.2);
+        opacity: 0.8;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.status-indicator {
+    animation: pulse 2s infinite;
+}
