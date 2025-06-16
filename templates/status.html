@@ -73,7 +73,7 @@
 
     <!-- Modal -->
     <div id="configModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full">
-        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="relative top-20 mx-auto p-5 border w-[700px] shadow-lg rounded-md bg-white">
             <div class="mt-3">
                 <h3 class="text-lg font-medium leading-6 text-gray-900 mb-4">Configure Services</h3>
                 <form id="configForm" method="POST" action="/configure" class="space-y-4">
@@ -104,19 +104,39 @@
 
     <script>
         // URL schemes
-        const URL_SCHEMES = ['https://', 'http://', 'ws://', 'wss://'];
+        const URL_SCHEMES = [
+            { value: 'https://', label: 'HTTPS' },
+            { value: 'http://', label: 'HTTP' },
+            { value: 'ws://', label: 'WebSocket' },
+            { value: 'wss://', label: 'Secure WebSocket' },
+            { value: 'postgresql://', label: 'PostgreSQL' },
+            { value: 'mysql://', label: 'MySQL' },
+            { value: 'mongodb://', label: 'MongoDB' },
+            { value: 'redis://', label: 'Redis' }
+        ];
 
         // Common ports
         const COMMON_PORTS = [
             { value: '', label: 'Custom' },
             { value: '80', label: '80 (HTTP)' },
             { value: '443', label: '443 (HTTPS)' },
+            { value: '5432', label: '5432 (PostgreSQL)' },
+            { value: '3306', label: '3306 (MySQL)' },
+            { value: '27017', label: '27017 (MongoDB)' },
+            { value: '6379', label: '6379 (Redis)' },
             { value: '8080', label: '8080 (HTTP Alt)' },
-            { value: '8443', label: '8443 (HTTPS Alt)' },
-            { value: '3000', label: '3000 (Node.js)' },
-            { value: '5000', label: '5000 (Flask)' },
-            { value: '8000', label: '8000 (Django)' },
-            { value: '8181', label: '8181 (Custom)' }
+            { value: '8443', label: '8443 (HTTPS Alt)' }
+        ];
+
+        // Common endpoints
+        const COMMON_ENDPOINTS = [
+            { value: '', label: 'Custom' },
+            { value: '/health', label: '/health' },
+            { value: '/status', label: '/status' },
+            { value: '/metrics', label: '/metrics' },
+            { value: '/api/health', label: '/api/health' },
+            { value: '/api/status', label: '/api/status' },
+            { value: '', label: 'No endpoint' }
         ];
 
         // Modal functions
@@ -141,6 +161,13 @@
             // Split host and port
             let [host = '', port = ''] = rest.split(':');
 
+            // Split path from host
+            let [hostname = '', path = ''] = host.split('/');
+            if (path) {
+                host = hostname;
+                path = '/' + path;
+            }
+
             return `
                 <div class="service-field border-b pb-4 mb-4">
                     <div class="flex justify-between items-center mb-2">
@@ -151,41 +178,54 @@
                             </button>
                         ` : ''}
                     </div>
-                    <div class="space-y-2">
+                    <div class="flex items-center space-x-2 flex-nowrap">
                         <input type="text" 
                                name="service${index}_name" 
                                placeholder="Service Name" 
                                value="${name}"
-                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                        <div class="flex space-x-2">
-                            <select name="service${index}_scheme" 
-                                    onchange="updateUrlField(this)"
-                                    class="mt-1 block w-32 rounded-l-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                                ${URL_SCHEMES.map(s => `
-                                    <option value="${s}" ${s === scheme ? 'selected' : ''}>${s}</option>
+                               class="mt-1 block w-32 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm flex-shrink-0">
+                        <select name="service${index}_scheme" 
+                                onchange="updateUrlField(this)"
+                                class="mt-1 block w-24 rounded-l-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm flex-shrink-0">
+                            ${URL_SCHEMES.map(s => `
+                                <option value="${s.value}" ${s.value === scheme ? 'selected' : ''}>${s.label}</option>
+                            `).join('')}
+                        </select>
+                        <input type="text" 
+                               name="service${index}_host" 
+                               placeholder="Host" 
+                               value="${host}"
+                               onchange="updateFullUrl(this)"
+                               class="mt-1 block w-32 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm flex-shrink-0">
+                        <div class="relative w-24">
+                            <select name="service${index}_port_select" 
+                                    onchange="handlePortSelect(this)"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm flex-shrink-0">
+                                ${COMMON_PORTS.map(p => `
+                                    <option value="${p.value}" ${p.value === port ? 'selected' : ''}>${p.label}</option>
                                 `).join('')}
                             </select>
                             <input type="text" 
-                                   name="service${index}_host" 
-                                   placeholder="example.com" 
-                                   value="${host}"
+                                   name="service${index}_port" 
+                                   placeholder="Port" 
+                                   value="${port}"
+                                   onchange="validatePort(this)"
+                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm hidden flex-shrink-0">
+                        </div>
+                        <div class="relative w-32">
+                            <select name="service${index}_endpoint_select" 
+                                    onchange="handleEndpointSelect(this)"
+                                    class="mt-1 block w-full rounded-l-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm flex-shrink-0">
+                                ${COMMON_ENDPOINTS.map(e => `
+                                    <option value="${e.value}" ${e.value === path ? 'selected' : ''}>${e.label}</option>
+                                `).join('')}
+                            </select>
+                            <input type="text" 
+                                   name="service${index}_endpoint" 
+                                   placeholder="Endpoint" 
+                                   value="${path}"
                                    onchange="updateFullUrl(this)"
-                                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                            <div class="relative">
-                                <select name="service${index}_port_select" 
-                                        onchange="handlePortSelect(this)"
-                                        class="mt-1 block w-32 rounded-r-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
-                                    ${COMMON_PORTS.map(p => `
-                                        <option value="${p.value}" ${p.value === port ? 'selected' : ''}>${p.label}</option>
-                                    `).join('')}
-                                </select>
-                                <input type="text" 
-                                       name="service${index}_port" 
-                                       placeholder="Port" 
-                                       value="${port}"
-                                       onchange="validatePort(this)"
-                                       class="mt-1 block w-32 rounded-r-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm hidden">
-                            </div>
+                                   class="mt-1 block w-full rounded-r-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm flex-shrink-0">
                         </div>
                         <input type="hidden" name="service${index}_full_url" value="${url}">
                     </div>
@@ -219,31 +259,46 @@
             }
         }
 
+        function handleEndpointSelect(select) {
+            const endpointInput = select.nextElementSibling;
+            if (select.value === '') {
+                endpointInput.focus();
+            } else {
+                endpointInput.value = select.value;
+                updateFullUrl(endpointInput);
+            }
+        }
+
         function updateUrlField(select) {
             const field = select.closest('.service-field');
             const hostInput = field.querySelector('input[name$="_host"]');
             const portInput = field.querySelector('input[name$="_port"]');
+            const endpointInput = field.querySelector('input[name$="_endpoint"]');
             const fullUrlInput = field.querySelector('input[name$="_full_url"]');
 
             const host = hostInput.value;
             const port = portInput.value;
+            const endpoint = endpointInput.value;
             const portPart = port ? `:${port}` : '';
 
-            fullUrlInput.value = select.value + host + portPart;
+            fullUrlInput.value = select.value + host + portPart + endpoint;
             saveFormState();
         }
 
         function updateFullUrl(input) {
             const field = input.closest('.service-field');
             const select = field.querySelector('select[name$="_scheme"]');
+            const hostInput = field.querySelector('input[name$="_host"]');
             const portInput = field.querySelector('input[name$="_port"]');
+            const endpointInput = field.querySelector('input[name$="_endpoint"]');
             const fullUrlInput = field.querySelector('input[name$="_full_url"]');
 
-            const host = input.value;
+            const host = hostInput.value;
             const port = portInput.value;
+            const endpoint = endpointInput.value;
             const portPart = port ? `:${port}` : '';
 
-            fullUrlInput.value = select.value + host + portPart;
+            fullUrlInput.value = select.value + host + portPart + endpoint;
             saveFormState();
         }
 
